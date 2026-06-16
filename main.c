@@ -34,6 +34,7 @@ bit stop_prompt_played = 0;
 unsigned char rc522_poll_ticks = 0;
 unsigned int station_leave_ticks = 0;
 unsigned char motor_boost_ticks = 0;
+unsigned char motor_boost_pwm = 0;
 bit motor_was_stopped = 1;
 
 #define STATION_COUNT  4
@@ -52,8 +53,10 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define SPEED_BASE            24
 #define SPEED_TURN_FORWARD    40
 #define SPEED_TURN_REVERSE    16
-#define SPEED_BOOST           45
-#define MOTOR_BOOST_TICKS     20
+#define SPEED_START_BOOST     45
+#define SPEED_LEAVE_BOOST     34
+#define START_BOOST_TICKS     20
+#define LEAVE_BOOST_TICKS     8
 
 #define DRIVE_STRAIGHT        0
 #define DRIVE_LEFT            1
@@ -216,6 +219,7 @@ static void motor_stop(void)
     pwm_a = 0;
     pwm_b = 0;
     motor_boost_ticks = 0;
+    motor_boost_pwm = 0;
     motor_was_stopped = 1;
     IN1 = 0;
     IN2 = 0;
@@ -247,7 +251,10 @@ static void system_init(void)
 static void motor_forward(unsigned char speed_a, unsigned char speed_b)
 {
     if (motor_was_stopped) {
-        motor_boost_ticks = MOTOR_BOOST_TICKS;
+        if (motor_boost_ticks == 0) {
+            motor_boost_ticks = START_BOOST_TICKS;
+            motor_boost_pwm = SPEED_START_BOOST;
+        }
         motor_was_stopped = 0;
     }
 
@@ -256,8 +263,8 @@ static void motor_forward(unsigned char speed_a, unsigned char speed_b)
     IN3 = 1;
     IN4 = 0;
     if (motor_boost_ticks > 0) {
-        pwm_a = SPEED_BOOST;
-        pwm_b = SPEED_BOOST;
+        pwm_a = motor_boost_pwm;
+        pwm_b = motor_boost_pwm;
     } else {
         pwm_a = speed_a;
         pwm_b = speed_b;
@@ -267,7 +274,10 @@ static void motor_forward(unsigned char speed_a, unsigned char speed_b)
 static void motor_turn_left(unsigned char forward_speed, unsigned char reverse_speed)
 {
     if (motor_was_stopped) {
-        motor_boost_ticks = MOTOR_BOOST_TICKS;
+        if (motor_boost_ticks == 0) {
+            motor_boost_ticks = START_BOOST_TICKS;
+            motor_boost_pwm = SPEED_START_BOOST;
+        }
         motor_was_stopped = 0;
     }
 
@@ -276,8 +286,8 @@ static void motor_turn_left(unsigned char forward_speed, unsigned char reverse_s
     IN3 = 1;
     IN4 = 0;
     if (motor_boost_ticks > 0) {
-        pwm_a = SPEED_BOOST;
-        pwm_b = SPEED_BOOST;
+        pwm_a = motor_boost_pwm;
+        pwm_b = motor_boost_pwm;
     } else {
         pwm_a = reverse_speed;
         pwm_b = forward_speed;
@@ -287,7 +297,10 @@ static void motor_turn_left(unsigned char forward_speed, unsigned char reverse_s
 static void motor_turn_right(unsigned char forward_speed, unsigned char reverse_speed)
 {
     if (motor_was_stopped) {
-        motor_boost_ticks = MOTOR_BOOST_TICKS;
+        if (motor_boost_ticks == 0) {
+            motor_boost_ticks = START_BOOST_TICKS;
+            motor_boost_pwm = SPEED_START_BOOST;
+        }
         motor_was_stopped = 0;
     }
 
@@ -296,8 +309,8 @@ static void motor_turn_right(unsigned char forward_speed, unsigned char reverse_
     IN3 = 0;
     IN4 = 1;
     if (motor_boost_ticks > 0) {
-        pwm_a = SPEED_BOOST;
-        pwm_b = SPEED_BOOST;
+        pwm_a = motor_boost_pwm;
+        pwm_b = motor_boost_pwm;
     } else {
         pwm_a = forward_speed;
         pwm_b = reverse_speed;
@@ -411,10 +424,6 @@ static void rc522_station_task(void)
 {
     unsigned char station_number;
 
-    if (station_leave_ticks > 0) {
-        return;
-    }
-
     ++rc522_poll_ticks;
     if (rc522_poll_ticks < RC522_POLL_TICKS) {
         return;
@@ -465,7 +474,9 @@ void main(void)
                     station_current = 0;
                     station_leave_ticks = STATION_LEAVE_TICKS;
                     startup_ignore_stop_ticks = STARTUP_IGNORE_TICKS;
-                    startup_force_straight_ticks = STARTUP_STRAIGHT_TICKS;
+                    startup_force_straight_ticks = 0;
+                    motor_boost_ticks = LEAVE_BOOST_TICKS;
+                    motor_boost_pwm = SPEED_LEAVE_BOOST;
                 }
                 continue;
             }
