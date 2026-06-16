@@ -181,6 +181,15 @@ void station_buzzer_start(unsigned char station_number)
     BUZZER = BUZZER_ON_LEVEL;
 }
 
+static void buzzer_hold_start(unsigned int duration_10ms)
+{
+    buzzer_beeps_left = 0;
+    buzzer_phase_ticks = 0;
+    buzzer_hold_ticks = duration_10ms;
+    buzzer_is_on = 1;
+    BUZZER = BUZZER_ON_LEVEL;
+}
+
 static void buzzer_task_10ms(void)
 {
     if (buzzer_hold_ticks > 0) {
@@ -450,7 +459,7 @@ static void handle_stop_condition(void)
     }
 
     if (!stop_prompt_played) {
-        station_buzzer_start(0);
+        buzzer_hold_start(100);
         stop_prompt_played = 1;
     }
 }
