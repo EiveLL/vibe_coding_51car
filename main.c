@@ -50,7 +50,7 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define BUZZER_OFF_TICKS  15
 
 #define TRACK_DEBOUNCE_COUNT  3
-#define SPEED_BASE            24
+#define SPEED_BASE            22
 #define SPEED_TURN_FORWARD    40
 #define SPEED_TURN_REVERSE    16
 #define SPEED_START_BOOST     45
@@ -68,7 +68,7 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define CAR_STOPPED_AT_STATION 1
 #define STATION_STOP_TICKS    200
 #define RC522_POLL_TICKS      10
-#define STATION_LEAVE_TICKS   200
+#define STATION_LEAVE_TICKS   300
 
 /*
  * Timer 0 interrupts every 100 us with a classic 12 MHz, 12-clock 8051.
