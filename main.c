@@ -32,6 +32,8 @@ unsigned char station_current = 0;
 unsigned char station_lock = 0;
 unsigned int station_stop_ticks = 0;
 bit stop_prompt_played = 0;
+unsigned char rc522_poll_ticks = 0;
+unsigned int station_leave_ticks = 0;
 
 #define STATION_COUNT  4
 
@@ -59,6 +61,8 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define CAR_RUNNING           0
 #define CAR_STOPPED_AT_STATION 1
 #define STATION_STOP_TICKS    200
+#define RC522_POLL_TICKS      10
+#define STATION_LEAVE_TICKS   500
 
 /*
  * Timer 0 interrupts every 100 us with a classic 12 MHz, 12-clock 8051.
@@ -373,6 +377,16 @@ static void rc522_station_task(void)
 {
     unsigned char station_number;
 
+    if (station_leave_ticks > 0) {
+        return;
+    }
+
+    ++rc522_poll_ticks;
+    if (rc522_poll_ticks < RC522_POLL_TICKS) {
+        return;
+    }
+    rc522_poll_ticks = 0;
+
     station_number = rc522_get_station();
     if (station_number != 0) {
         stop_at_station(station_number);
@@ -415,6 +429,7 @@ void main(void)
                 if (station_stop_ticks == 0) {
                     car_state = CAR_RUNNING;
                     station_current = 0;
+                    station_leave_ticks = STATION_LEAVE_TICKS;
                     startup_ignore_stop_ticks = STARTUP_IGNORE_TICKS;
                     startup_force_straight_ticks = STARTUP_STRAIGHT_TICKS;
                 }
@@ -425,6 +440,12 @@ void main(void)
                 --startup_force_straight_ticks;
                 if (startup_ignore_stop_ticks > 0) {
                     --startup_ignore_stop_ticks;
+                }
+                if (station_leave_ticks > 0) {
+                    --station_leave_ticks;
+                    if (station_leave_ticks == 0) {
+                        station_lock = 0;
+                    }
                 }
                 station_line_detected = 0;
                 last_drive_action = DRIVE_STRAIGHT;
@@ -440,6 +461,12 @@ void main(void)
                     stop_after_startup_pending = 0;
                     handle_stop_condition();
                     continue;
+                }
+            }
+            if (station_leave_ticks > 0) {
+                --station_leave_ticks;
+                if (station_leave_ticks == 0) {
+                    station_lock = 0;
                 }
             }
             line_follow_10ms();
