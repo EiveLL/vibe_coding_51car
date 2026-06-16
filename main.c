@@ -101,6 +101,67 @@ static void timer0_init(void)
     TR0 = 1;
 }
 
+static void serial_init(void)
+{
+    /* UART0 mode 1, Timer 2 baud generator: 9600 baud at 12 MHz. */
+    SCON = 0x50;
+    PCON &= 0x7F;
+    T2CON = 0x34;
+    RCAP2H = 0xFF;
+    RCAP2L = 0xD9;
+    TH2 = 0xFF;
+    TL2 = 0xD9;
+}
+
+static void serial_send_char(char value)
+{
+    SBUF = value;
+    while (!TI) {
+    }
+    TI = 0;
+}
+
+static void serial_send_string(char code *text)
+{
+    while (*text != '\0') {
+        serial_send_char(*text);
+        ++text;
+    }
+}
+
+static void serial_send_hex(unsigned char value)
+{
+    unsigned char high;
+    unsigned char low;
+
+    high = (value >> 4) & 0x0F;
+    low = value & 0x0F;
+
+    serial_send_char((high < 10) ? ('0' + high) : ('A' + high - 10));
+    serial_send_char((low < 10) ? ('0' + low) : ('A' + low - 10));
+}
+
+static void serial_print_card(unsigned char *uid, unsigned char station_number)
+{
+    unsigned char i;
+
+    serial_send_string("UID:");
+    for (i = 0; i < 4; ++i) {
+        if (i != 0) {
+            serial_send_char(' ');
+        }
+        serial_send_hex(uid[i]);
+    }
+
+    serial_send_string(" ST:");
+    if (station_number == 0) {
+        serial_send_string("unknown");
+    } else {
+        serial_send_char('0' + station_number);
+    }
+    serial_send_string("\r\n");
+}
+
 static void gpio_init(void)
 {
     /* Release Port 0 pins so external line sensor outputs can drive them. */
@@ -239,6 +300,7 @@ static void system_init(void)
 {
     gpio_init();
     motor_init();
+    serial_init();
 
     rc522_version = rc522_init();
     if ((rc522_version == RC522_VERSION_V1) ||
@@ -253,6 +315,8 @@ static void system_init(void)
     timer0_init();
     startup_force_straight_ticks = STARTUP_STRAIGHT_TICKS;
     station_buzzer_start(0);
+
+    serial_send_string(rc522_ready ? "INIT OK\r\n" : "INIT ERR\r\n");
 }
 
 static void motor_forward(unsigned char speed_a, unsigned char speed_b)
@@ -411,6 +475,7 @@ static unsigned char rc522_get_station(void)
     }
 
     station_number = find_station(uid);
+    serial_print_card(uid, station_number);
     if ((station_number != 0) && (station_number != station_lock)) {
         station_lock = station_number;
         station_leave_ticks = STATION_LEAVE_TICKS;
