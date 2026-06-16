@@ -222,24 +222,6 @@ static void motor_turn_right(unsigned char forward_speed, unsigned char reverse_
     pwm_b = reverse_speed;
 }
 
-static void line_follow_apply_last_action(void)
-{
-    switch (last_drive_action) {
-    case DRIVE_LEFT:
-        motor_turn_left(SPEED_TURN_FORWARD, SPEED_TURN_REVERSE);
-        break;
-
-    case DRIVE_RIGHT:
-        motor_turn_right(SPEED_TURN_FORWARD, SPEED_TURN_REVERSE);
-        break;
-
-    case DRIVE_STRAIGHT:
-    default:
-        motor_forward(SPEED_BASE, SPEED_BASE);
-        break;
-    }
-}
-
 /*
  * Called every 10 ms.
  *
@@ -296,7 +278,8 @@ static void line_follow_10ms(void)
         /* Both sensors are 1: stop and let RC522 confirm a station. */
         if (startup_ignore_stop_ticks > 0) {
             station_line_detected = 0;
-            line_follow_apply_last_action();
+            last_drive_action = DRIVE_STRAIGHT;
+            motor_forward(SPEED_BASE, SPEED_BASE);
             break;
         }
 
