@@ -33,6 +33,8 @@ unsigned int station_stop_ticks = 0;
 bit stop_prompt_played = 0;
 unsigned char rc522_poll_ticks = 0;
 unsigned int station_leave_ticks = 0;
+unsigned char motor_boost_ticks = 0;
+bit motor_was_stopped = 1;
 
 #define STATION_COUNT  4
 
@@ -50,6 +52,8 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define SPEED_BASE            24
 #define SPEED_TURN_FORWARD    40
 #define SPEED_TURN_REVERSE    16
+#define SPEED_BOOST           45
+#define MOTOR_BOOST_TICKS     20
 
 #define DRIVE_STRAIGHT        0
 #define DRIVE_LEFT            1
@@ -61,7 +65,7 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define CAR_STOPPED_AT_STATION 1
 #define STATION_STOP_TICKS    200
 #define RC522_POLL_TICKS      10
-#define STATION_LEAVE_TICKS   100
+#define STATION_LEAVE_TICKS   200
 
 /*
  * Timer 0 interrupts every 100 us with a classic 12 MHz, 12-clock 8051.
@@ -211,6 +215,8 @@ static void motor_stop(void)
 {
     pwm_a = 0;
     pwm_b = 0;
+    motor_boost_ticks = 0;
+    motor_was_stopped = 1;
     IN1 = 0;
     IN2 = 0;
     IN3 = 0;
@@ -240,32 +246,62 @@ static void system_init(void)
 
 static void motor_forward(unsigned char speed_a, unsigned char speed_b)
 {
+    if (motor_was_stopped) {
+        motor_boost_ticks = MOTOR_BOOST_TICKS;
+        motor_was_stopped = 0;
+    }
+
     IN1 = 1;
     IN2 = 0;
     IN3 = 1;
     IN4 = 0;
-    pwm_a = speed_a;
-    pwm_b = speed_b;
+    if (motor_boost_ticks > 0) {
+        pwm_a = SPEED_BOOST;
+        pwm_b = SPEED_BOOST;
+    } else {
+        pwm_a = speed_a;
+        pwm_b = speed_b;
+    }
 }
 
 static void motor_turn_left(unsigned char forward_speed, unsigned char reverse_speed)
 {
+    if (motor_was_stopped) {
+        motor_boost_ticks = MOTOR_BOOST_TICKS;
+        motor_was_stopped = 0;
+    }
+
     IN1 = 0;
     IN2 = 1;
     IN3 = 1;
     IN4 = 0;
-    pwm_a = reverse_speed;
-    pwm_b = forward_speed;
+    if (motor_boost_ticks > 0) {
+        pwm_a = SPEED_BOOST;
+        pwm_b = SPEED_BOOST;
+    } else {
+        pwm_a = reverse_speed;
+        pwm_b = forward_speed;
+    }
 }
 
 static void motor_turn_right(unsigned char forward_speed, unsigned char reverse_speed)
 {
+    if (motor_was_stopped) {
+        motor_boost_ticks = MOTOR_BOOST_TICKS;
+        motor_was_stopped = 0;
+    }
+
     IN1 = 1;
     IN2 = 0;
     IN3 = 0;
     IN4 = 1;
-    pwm_a = forward_speed;
-    pwm_b = reverse_speed;
+    if (motor_boost_ticks > 0) {
+        pwm_a = SPEED_BOOST;
+        pwm_b = SPEED_BOOST;
+    } else {
+        pwm_a = forward_speed;
+        pwm_b = reverse_speed;
+    }
 }
 
 /*
@@ -436,6 +472,9 @@ void main(void)
 
             if (startup_force_straight_ticks > 0) {
                 --startup_force_straight_ticks;
+                if (motor_boost_ticks > 0) {
+                    --motor_boost_ticks;
+                }
                 if (startup_ignore_stop_ticks > 0) {
                     --startup_ignore_stop_ticks;
                 }
@@ -453,6 +492,9 @@ void main(void)
 
             if (startup_ignore_stop_ticks > 0) {
                 --startup_ignore_stop_ticks;
+            }
+            if (motor_boost_ticks > 0) {
+                --motor_boost_ticks;
             }
             if (station_leave_ticks > 0) {
                 --station_leave_ticks;
