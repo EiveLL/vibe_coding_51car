@@ -18,7 +18,6 @@ unsigned char track_last_sample = 0x00;
 unsigned char track_stable_count = 0;
 unsigned char last_drive_action = 0;
 unsigned int startup_force_straight_ticks = 0;
-unsigned int startup_ignore_stop_ticks = 0;
 unsigned char buzzer_beeps_left = 0;
 unsigned char buzzer_phase_ticks = 0;
 unsigned int buzzer_hold_ticks = 0;
@@ -62,13 +61,13 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define DRIVE_LEFT            1
 #define DRIVE_RIGHT           2
 #define STARTUP_STRAIGHT_TICKS 50
-#define STARTUP_IGNORE_TICKS  500
 
 #define CAR_RUNNING           0
 #define CAR_STOPPED_AT_STATION 1
+#define CAR_STOPPED_AT_LINE   2
 #define STATION_STOP_TICKS    200
 #define RC522_POLL_TICKS      10
-#define STATION_LEAVE_TICKS   300
+#define STATION_LEAVE_TICKS   1000
 
 /*
  * Timer 0 interrupts every 100 us with a classic 12 MHz, 12-clock 8051.
@@ -253,7 +252,6 @@ static void system_init(void)
 
     timer0_init();
     startup_force_straight_ticks = STARTUP_STRAIGHT_TICKS;
-    startup_ignore_stop_ticks = STARTUP_IGNORE_TICKS;
     station_buzzer_start(0);
 }
 
@@ -383,13 +381,6 @@ static void line_follow_10ms(void)
     case 0x03:
     default:
         /* Both sensors are 1: stop and let RC522 confirm a station. */
-        if (startup_ignore_stop_ticks > 0) {
-            station_line_detected = 0;
-            last_drive_action = DRIVE_STRAIGHT;
-            motor_forward(SPEED_BASE, SPEED_BASE);
-            break;
-        }
-
         station_line_detected = 1;
         motor_stop();
         break;
@@ -416,13 +407,13 @@ static unsigned char rc522_get_station(void)
     }
 
     if (rc522_read_uid(uid) != RC522_OK) {
-        station_lock = 0;
         return 0;
     }
 
     station_number = find_station(uid);
     if ((station_number != 0) && (station_number != station_lock)) {
         station_lock = station_number;
+        station_leave_ticks = STATION_LEAVE_TICKS;
         return station_number;
     }
 
@@ -462,6 +453,7 @@ static void handle_stop_condition(void)
         buzzer_hold_start(100);
         stop_prompt_played = 1;
     }
+    car_state = CAR_STOPPED_AT_LINE;
 }
 
 void main(void)
@@ -481,8 +473,6 @@ void main(void)
                 if (station_stop_ticks == 0) {
                     car_state = CAR_RUNNING;
                     station_current = 0;
-                    station_leave_ticks = STATION_LEAVE_TICKS;
-                    startup_ignore_stop_ticks = STARTUP_IGNORE_TICKS;
                     startup_force_straight_ticks = 0;
                     motor_boost_ticks = LEAVE_BOOST_TICKS;
                     motor_boost_pwm = SPEED_LEAVE_BOOST;
@@ -490,13 +480,15 @@ void main(void)
                 continue;
             }
 
+            if (car_state == CAR_STOPPED_AT_LINE) {
+                motor_stop();
+                continue;
+            }
+
             if (startup_force_straight_ticks > 0) {
                 --startup_force_straight_ticks;
                 if (motor_boost_ticks > 0) {
                     --motor_boost_ticks;
-                }
-                if (startup_ignore_stop_ticks > 0) {
-                    --startup_ignore_stop_ticks;
                 }
                 if (station_leave_ticks > 0) {
                     --station_leave_ticks;
@@ -507,12 +499,10 @@ void main(void)
                 station_line_detected = 0;
                 last_drive_action = DRIVE_STRAIGHT;
                 motor_forward(SPEED_BASE, SPEED_BASE);
+                rc522_station_task();
                 continue;
             }
 
-            if (startup_ignore_stop_ticks > 0) {
-                --startup_ignore_stop_ticks;
-            }
             if (motor_boost_ticks > 0) {
                 --motor_boost_ticks;
             }
