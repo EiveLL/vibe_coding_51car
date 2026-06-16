@@ -17,6 +17,7 @@ unsigned char track_value = 0x00;
 unsigned char track_last_sample = 0x00;
 unsigned char track_stable_count = 0;
 unsigned char last_drive_action = 0;
+unsigned int startup_force_straight_ticks = 0;
 unsigned int startup_ignore_stop_ticks = 0;
 unsigned char buzzer_beeps_left = 0;
 unsigned char buzzer_phase_ticks = 0;
@@ -37,6 +38,7 @@ unsigned char rc522_version = 0;
 #define DRIVE_STRAIGHT        0
 #define DRIVE_LEFT            1
 #define DRIVE_RIGHT           2
+#define STARTUP_STRAIGHT_TICKS 50
 #define STARTUP_IGNORE_TICKS  500
 
 /*
@@ -188,6 +190,7 @@ static void system_init(void)
     }
 
     timer0_init();
+    startup_force_straight_ticks = STARTUP_STRAIGHT_TICKS;
     startup_ignore_stop_ticks = STARTUP_IGNORE_TICKS;
     station_buzzer_start(0);
 }
@@ -297,6 +300,18 @@ void main(void)
         if (flag_10ms) {
             flag_10ms = 0;
             buzzer_task_10ms();
+
+            if (startup_force_straight_ticks > 0) {
+                --startup_force_straight_ticks;
+                if (startup_ignore_stop_ticks > 0) {
+                    --startup_ignore_stop_ticks;
+                }
+                station_line_detected = 0;
+                last_drive_action = DRIVE_STRAIGHT;
+                motor_forward(SPEED_BASE, SPEED_BASE);
+                continue;
+            }
+
             if (startup_ignore_stop_ticks > 0) {
                 --startup_ignore_stop_ticks;
             }
