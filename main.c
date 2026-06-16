@@ -26,6 +26,20 @@ bit buzzer_is_on = 0;
 bit station_line_detected = 0;
 bit rc522_ready = 0;
 unsigned char rc522_version = 0;
+unsigned char stop_after_startup_pending = 0;
+unsigned char car_state = 0;
+unsigned char station_current = 0;
+unsigned char station_lock = 0;
+unsigned int station_stop_ticks = 0;
+
+#define STATION_COUNT  4
+
+unsigned char code station_uid[STATION_COUNT][4] = {
+    {0x83, 0xB1, 0x00, 0x07},
+    {0xD3, 0x97, 0xBA, 0xE2},
+    {0x2C, 0xC0, 0x31, 0x6F},
+    {0x83, 0xF0, 0xA1, 0x05}
+};
 
 #define BUZZER_ON_TICKS   15
 #define BUZZER_OFF_TICKS  15
@@ -40,6 +54,10 @@ unsigned char rc522_version = 0;
 #define DRIVE_RIGHT           2
 #define STARTUP_STRAIGHT_TICKS 50
 #define STARTUP_IGNORE_TICKS  500
+
+#define CAR_RUNNING           0
+#define CAR_STOPPED_AT_STATION 1
+#define STATION_STOP_TICKS    200
 
 /*
  * Timer 0 interrupts every 100 us with a classic 12 MHz, 12-clock 8051.
@@ -85,6 +103,26 @@ static void gpio_init(void)
     RC522_RST = 1;
 
     BUZZER = BUZZER_OFF_LEVEL;
+}
+
+static unsigned char find_station(unsigned char *uid)
+{
+    unsigned char station;
+    unsigned char i;
+
+    for (station = 0; station < STATION_COUNT; ++station) {
+        for (i = 0; i < 4; ++i) {
+            if (uid[i] != station_uid[station][i]) {
+                break;
+            }
+        }
+
+        if (i == 4) {
+            return station + 1;
+        }
+    }
+
+    return 0;
 }
 
 static void motor_init(void)
@@ -183,7 +221,8 @@ static void system_init(void)
     rc522_version = rc522_init();
     if ((rc522_version == RC522_VERSION_V1) ||
         (rc522_version == RC522_VERSION_V2) ||
-        (rc522_version == RC522_VERSION_CLONE)) {
+        (rc522_version == RC522_VERSION_CLONE) ||
+        (rc522_version == RC522_VERSION_FM17522)) {
         rc522_ready = 1;
     } else {
         rc522_ready = 0;
@@ -281,6 +320,7 @@ static void line_follow_10ms(void)
         /* Both sensors are 1: stop and let RC522 confirm a station. */
         if (startup_ignore_stop_ticks > 0) {
             station_line_detected = 0;
+            stop_after_startup_pending = 1;
             last_drive_action = DRIVE_STRAIGHT;
             motor_forward(SPEED_BASE, SPEED_BASE);
             break;
@@ -292,6 +332,36 @@ static void line_follow_10ms(void)
     }
 }
 
+static void stop_at_station(unsigned char station_number)
+{
+    motor_stop();
+    car_state = CAR_STOPPED_AT_STATION;
+    station_current = station_number;
+    station_stop_ticks = STATION_STOP_TICKS;
+    station_buzzer_start(station_number);
+}
+
+static void rc522_station_task(void)
+{
+    unsigned char uid[4];
+    unsigned char station_number;
+
+    if (!rc522_ready) {
+        return;
+    }
+
+    if (rc522_read_uid(uid) != RC522_OK) {
+        station_lock = 0;
+        return;
+    }
+
+    station_number = find_station(uid);
+    if ((station_number != 0) && (station_number != station_lock)) {
+        station_lock = station_number;
+        stop_at_station(station_number);
+    }
+}
+
 void main(void)
 {
     system_init();
@@ -300,6 +370,20 @@ void main(void)
         if (flag_10ms) {
             flag_10ms = 0;
             buzzer_task_10ms();
+
+            if (car_state == CAR_STOPPED_AT_STATION) {
+                motor_stop();
+                if (station_stop_ticks > 0) {
+                    --station_stop_ticks;
+                }
+                if (station_stop_ticks == 0) {
+                    car_state = CAR_RUNNING;
+                    station_current = 0;
+                    startup_ignore_stop_ticks = STARTUP_IGNORE_TICKS;
+                    startup_force_straight_ticks = STARTUP_STRAIGHT_TICKS;
+                }
+                continue;
+            }
 
             if (startup_force_straight_ticks > 0) {
                 --startup_force_straight_ticks;
@@ -314,8 +398,18 @@ void main(void)
 
             if (startup_ignore_stop_ticks > 0) {
                 --startup_ignore_stop_ticks;
+                if ((startup_ignore_stop_ticks == 0) &&
+                    (stop_after_startup_pending != 0) &&
+                    (track_read() == 0x03)) {
+                    stop_after_startup_pending = 0;
+                    motor_stop();
+                    station_line_detected = 1;
+                    station_buzzer_start(0);
+                    continue;
+                }
             }
             line_follow_10ms();
+            rc522_station_task();
         }
     }
 }
