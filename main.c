@@ -26,7 +26,6 @@ bit buzzer_is_on = 0;
 bit station_line_detected = 0;
 bit rc522_ready = 0;
 unsigned char rc522_version = 0;
-unsigned char stop_after_startup_pending = 0;
 unsigned char car_state = 0;
 unsigned char station_current = 0;
 unsigned char station_lock = 0;
@@ -62,7 +61,7 @@ unsigned char code station_uid[STATION_COUNT][4] = {
 #define CAR_STOPPED_AT_STATION 1
 #define STATION_STOP_TICKS    200
 #define RC522_POLL_TICKS      10
-#define STATION_LEAVE_TICKS   500
+#define STATION_LEAVE_TICKS   100
 
 /*
  * Timer 0 interrupts every 100 us with a classic 12 MHz, 12-clock 8051.
@@ -328,7 +327,6 @@ static void line_follow_10ms(void)
         /* Both sensors are 1: stop and let RC522 confirm a station. */
         if (startup_ignore_stop_ticks > 0) {
             station_line_detected = 0;
-            stop_after_startup_pending = 1;
             last_drive_action = DRIVE_STRAIGHT;
             motor_forward(SPEED_BASE, SPEED_BASE);
             break;
@@ -455,13 +453,6 @@ void main(void)
 
             if (startup_ignore_stop_ticks > 0) {
                 --startup_ignore_stop_ticks;
-                if ((startup_ignore_stop_ticks == 0) &&
-                    (stop_after_startup_pending != 0) &&
-                    (track_read() == 0x03)) {
-                    stop_after_startup_pending = 0;
-                    handle_stop_condition();
-                    continue;
-                }
             }
             if (station_leave_ticks > 0) {
                 --station_leave_ticks;
