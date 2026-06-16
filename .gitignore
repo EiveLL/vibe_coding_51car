@@ -5,3 +5,4 @@ Objects/
 *.bak
 build.log
 *.docx
+.idea/
