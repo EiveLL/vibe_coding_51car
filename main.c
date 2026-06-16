@@ -31,6 +31,7 @@ unsigned char car_state = 0;
 unsigned char station_current = 0;
 unsigned char station_lock = 0;
 unsigned int station_stop_ticks = 0;
+bit stop_prompt_played = 0;
 
 #define STATION_COUNT  4
 
@@ -297,6 +298,7 @@ static void line_follow_10ms(void)
     case 0x00:
         /* Both sensors are 0: go straight. */
         station_line_detected = 0;
+        stop_prompt_played = 0;
         last_drive_action = DRIVE_STRAIGHT;
         motor_forward(SPEED_BASE, SPEED_BASE);
         break;
@@ -304,6 +306,7 @@ static void line_follow_10ms(void)
     case 0x02:
         /* Right sensor is 1: steer left. */
         station_line_detected = 0;
+        stop_prompt_played = 0;
         last_drive_action = DRIVE_LEFT;
         motor_turn_left(SPEED_TURN_FORWARD, SPEED_TURN_REVERSE);
         break;
@@ -311,6 +314,7 @@ static void line_follow_10ms(void)
     case 0x01:
         /* Left sensor is 1: steer right. */
         station_line_detected = 0;
+        stop_prompt_played = 0;
         last_drive_action = DRIVE_RIGHT;
         motor_turn_right(SPEED_TURN_FORWARD, SPEED_TURN_REVERSE);
         break;
@@ -338,27 +342,59 @@ static void stop_at_station(unsigned char station_number)
     car_state = CAR_STOPPED_AT_STATION;
     station_current = station_number;
     station_stop_ticks = STATION_STOP_TICKS;
+    stop_prompt_played = 1;
     station_buzzer_start(station_number);
 }
 
-static void rc522_station_task(void)
+static unsigned char rc522_get_station(void)
 {
     unsigned char uid[4];
     unsigned char station_number;
 
     if (!rc522_ready) {
-        return;
+        return 0;
     }
 
     if (rc522_read_uid(uid) != RC522_OK) {
         station_lock = 0;
-        return;
+        return 0;
     }
 
     station_number = find_station(uid);
     if ((station_number != 0) && (station_number != station_lock)) {
         station_lock = station_number;
+        return station_number;
+    }
+
+    return 0;
+}
+
+static void rc522_station_task(void)
+{
+    unsigned char station_number;
+
+    station_number = rc522_get_station();
+    if (station_number != 0) {
         stop_at_station(station_number);
+    }
+}
+
+static void handle_stop_condition(void)
+{
+    unsigned char station_number;
+
+    motor_stop();
+    station_line_detected = 1;
+
+    station_number = rc522_get_station();
+    if (station_number != 0) {
+        stop_at_station(station_number);
+        return;
+    }
+
+    if (!stop_prompt_played) {
+        station_buzzer_start(0);
+        stop_prompt_played = 1;
     }
 }
 
@@ -402,14 +438,16 @@ void main(void)
                     (stop_after_startup_pending != 0) &&
                     (track_read() == 0x03)) {
                     stop_after_startup_pending = 0;
-                    motor_stop();
-                    station_line_detected = 1;
-                    station_buzzer_start(0);
+                    handle_stop_condition();
                     continue;
                 }
             }
             line_follow_10ms();
-            rc522_station_task();
+            if (station_line_detected) {
+                handle_stop_condition();
+            } else {
+                rc522_station_task();
+            }
         }
     }
 }
