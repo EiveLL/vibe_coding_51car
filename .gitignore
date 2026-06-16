@@ -1,0 +1,7 @@
+Listings/
+Objects/
+*.uvgui.*
+*.uvopt
+*.bak
+build.log
+*.docx
